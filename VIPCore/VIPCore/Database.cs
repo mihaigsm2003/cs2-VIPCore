@@ -29,8 +29,6 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
                                                    `expires` BIGINT NOT NULL,
                                                PRIMARY KEY (`account_id`, `sid`));
                                                """;
-
-
             await dbConnection.ExecuteAsync(createVipUsersTable);
 
             const string createVipServersTable = """
@@ -43,10 +41,8 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
                                                      PRIMARY KEY (`serverId`)
                                                  );
                                                  """;
-
             await dbConnection.ExecuteAsync(createVipServersTable);
 
-            // Check if the ServerIP and ServerPort already exist
             const string checkVipServerQuery = """
                                                SELECT COUNT(*)
                                                FROM `vip_servers`
@@ -61,7 +57,6 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
 
             if (serverExists == 0)
             {
-                // Insert ServerIP and ServerPort from config into vip_servers table
                 const string insertVipServerQuery = """
                                                     INSERT INTO `vip_servers` (`serverId`, `serverIp`, `port`)
                                                     VALUES (@ServerId, @ServerIP, @ServerPort);
@@ -87,7 +82,7 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
         {
             await using var connection = new MySqlConnection(dbConnectionString);
             await connection.OpenAsync();
-            var serverId = await GetServerId(connection);
+            long serverId = await GetServerId(connection);
 
             var existingUser = await connection.QuerySingleOrDefaultAsync<User>(
                 @"SELECT * FROM vip_users WHERE account_id = @AccId AND sid = @sid",
@@ -108,7 +103,7 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
         {
             await using var connection = new MySqlConnection(dbConnectionString);
             await connection.OpenAsync();
-            var serverId = await GetServerId(connection);
+            long serverId = await GetServerId(connection);
 
             var existingUser = await connection.QuerySingleOrDefaultAsync<User>(
                 @"SELECT * FROM vip_users WHERE account_id = @AccId AND sid = @sid", new
@@ -122,6 +117,8 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
                 vipCore.PrintLogWarning("User already exists");
                 return;
             }
+
+            user.sid = (int)serverId;
 
             await connection.ExecuteAsync(@"
                 INSERT INTO vip_users (account_id, name, lastvisit, sid, `group`, expires)
@@ -141,7 +138,7 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
         {
             await using var connection = new MySqlConnection(dbConnectionString);
             await connection.OpenAsync();
-            var serverId = await GetServerId(connection);
+            long serverId = await GetServerId(connection);
             var existingUser = await connection.QuerySingleOrDefaultAsync<User>(
                 @"SELECT * FROM vip_users WHERE account_id = @AccId AND sid = @sid", new
                 {
@@ -154,6 +151,8 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
                 vipCore.PrintLogWarning("User does not exist");
                 return;
             }
+
+            user.sid = (int)serverId;
 
             await connection.ExecuteAsync(@"
             UPDATE 
@@ -180,7 +179,7 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
         {
             await using var connection = new MySqlConnection(dbConnectionString);
             await connection.OpenAsync();
-            var serverId = await GetServerId(connection);
+            long serverId = await GetServerId(connection);
             var existingUser = await connection.QuerySingleOrDefaultAsync<User>(
                 @"SELECT * FROM vip_users WHERE account_id = @AccId AND sid = @sid", new
                 {
@@ -232,7 +231,7 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
 
             await using var connection = new MySqlConnection(dbConnectionString);
             await connection.OpenAsync();
-            var serverId = await GetServerId(connection);
+            long serverId = await GetServerId(connection);
             await connection.ExecuteAsync(@"
             DELETE FROM vip_users
         WHERE account_id = @AccId AND sid = @sid;", new { AccId = accId, sid = serverId });
@@ -251,7 +250,7 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
         {
             await using var connection = new MySqlConnection(dbConnectionString);
             await connection.OpenAsync();
-            var serverId = await GetServerId(connection);
+            long serverId = await GetServerId(connection);
             var user = await connection.QueryAsync<User?>(
                 "SELECT * FROM `vip_users` WHERE `account_id` = @AccId AND sid = @sid AND (expires > @CurrTime OR expires = 0)",
                 new { AccId = accId, sid = serverId, CurrTime = DateTime.UtcNow.GetUnixEpoch() }
@@ -273,7 +272,7 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
         {
             await using var connection = new MySqlConnection(dbConnectionString);
             await connection.OpenAsync();
-            var serverId = await GetServerId(connection);
+            long serverId = await GetServerId(connection);
 
             var expiredUsers = await connection.QueryAsync<User>(
                 "SELECT * FROM vip_users WHERE account_id = @AccId AND sid = @sid AND expires < @CurrentTime AND expires > 0",
@@ -283,6 +282,7 @@ public class Database(VipCore vipCore, ILogger logger, string dbConnectionString
                     sid = serverId,
                     CurrentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
                 });
+
             Console.WriteLine($"Removing expired VIPS, Current time: {DateTimeOffset.UtcNow.ToUnixTimeSeconds()}");
 
             foreach (var user in expiredUsers)
